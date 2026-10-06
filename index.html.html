@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Adalat — Legal Reasoning Assistant</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <h1>⚖️ AI Adalat</h1>
+        <p class="subtitle">Bilingual Legal Reasoning Assistant — Pakistan & Shariah Law</p>
+    </header>
+
+    <main>
+        <section id="intake-section">
+            <h2>Present Your Case</h2>
+            <p class="disclaimer">
+                <strong>Disclaimer:</strong> This is an AI-powered legal education tool. It does NOT issue binding judgments.
+                Always consult a licensed advocate for real legal matters.
+            </p>
+
+            <div class="form-group">
+                <label for="case-facts">Describe your case facts:</label>
+                <textarea id="case-facts" rows="6" placeholder="Example: I entered into a contract with a supplier for delivery of goods. The supplier failed to deliver on time and I suffered losses..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="law-type">Select Law Source:</label>
+                <select id="law-type">
+                    <option value="both">Both (Pakistani Law + Shariah)</option>
+                    <option value="pakistani">Pakistani Law Only</option>
+                    <option value="shariah">Shariah Only</option>
+                </select>
+            </div>
+
+            <button id="analyze-btn" onclick="analyzeCase()">🔍 Analyze Case</button>
+            <p id="status" class="status"></p>
+        </section>
+
+        <section id="results-section" style="display:none;">
+            <h2>Legal Analysis</h2>
+            <div id="results-content"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>AI Adalat is for legal education and mediation preparation only. Not a substitute for professional legal advice.</p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
