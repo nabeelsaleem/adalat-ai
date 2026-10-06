@@ -1,250 +1,379 @@
 // ============================================================
-// AI ADALAT — Main Application Logic
+// AI ADALAT — Phase 3: Groq API via Cloudflare Worker
 // ============================================================
 
-const LAW_BOOKS = {
-    statutes: [
-        { name: "Constitution of Pakistan 1973", file: "books/statutes/Constitution_of_Pakistan_1973.pdf" },
-        { name: "Pakistan Penal Code 1860", file: "books/statutes/Pakistan_Penal_Code_1860.pdf" },
-        { name: "Qanun-e-Shahadat 1984", file: "books/statutes/Qanun_e_Shahadat_1984.pdf" },
-        { name: "CrPC 1898", file: "books/statutes/CrPC_1898.pdf" },
-        { name: "CPC 1908", file: "books/statutes/CPC_1908.pdf" },
-        { name: "Muslim Family Laws Ordinance 1961", file: "books/statutes/Muslim_Family_Laws_Ordinance_1961.pdf" },
-        { name: "Contract Act 1872", file: "books/statutes/Contract_Act_1872.pdf" },
-        { name: "Transfer of Property Act 1882", file: "books/statutes/Transfer_of_Property_Act_1882.pdf" },
-        { name: "Arbitration Act 1940", file: "books/statutes/Arbitration_Act_1940.pdf" }
-    ],
-    shariah: [
-        { name: "Quran (Urdu Translation)", file: "books/shariah/Quran_Urdu_Translation.pdf" },
-        { name: "Tafseer Ibn Kathir (Urdu)", file: "books/shariah/Tafseer_Ibn_Kathir_Urdu_Jild1.pdf" },
-        { name: "Sahih Bukhari (Urdu)", file: "books/shariah/Sahih_Bukhari_Urdu_Vol1.pdf" }
-    ]
+// 👇👇👇 PASTE YOUR CLOUDFLARE WORKER URL HERE 👇👇👇
+const WORKER_URL = "https://ai-adalat-proxy.YOUR-SUBDOMAIN.workers.dev";
+// 👆👆👆 (keep it without trailing slash) 👆👆👆
+
+// ============================================================
+// LEGAL GLOSSARY (Roman Urdu / Urdu → English legal terms)
+// ============================================================
+
+const LEGAL_GLOSSARY = {
+    // Accidents & Injury
+    "takkar": "collision accident negligent driving rash",
+    "gari": "vehicle car motor",
+    "gaari": "vehicle car motor",
+    "bike": "motorcycle vehicle accident",
+    "zakhmi": "injury hurt wound",
+    "zakham": "injury wound hurt",
+    "hospital": "medical treatment injury",
+    "driver": "driver negligent driving",
+    "bhaag": "hit and run absconding",
+    "bhag": "hit and run absconding",
+    "surat-e-haal": "accident circumstance",
+    "surat": "circumstance",
+
+    // Property
+    "zameen": "land property immovable",
+    "makan": "house property immovable",
+    "kiraya": "rent lease tenancy",
+    "qabza": "illegal possession dispossession",
+    "jaidad": "property asset estate",
+    "waris": "inheritance heir succession",
+    "wirsa": "inheritance succession heir",
+    "wirasat": "inheritance succession",
+
+    // Family
+    "nikah": "marriage nikah",
+    "shadi": "marriage nikah wedlock",
+    "talaq": "divorce dissolution",
+    "khula": "khula divorce wife-initiated",
+    "haq mehr": "dower mahr",
+    "haqmehr": "dower mahr",
+    "mehr": "dower mahr",
+    "nafaqa": "maintenance alimony",
+    "bachay": "children minor custody",
+    "bacha": "child minor custody",
+    "custody": "custody guardianship",
+
+    // Contracts & Money
+    "paisa": "money payment amount",
+    "udhaar": "loan debt borrowing",
+    "qarz": "loan debt",
+    "contract": "agreement contract",
+    "muahida": "agreement contract",
+    "dhoka": "fraud cheating deception",
+    "farayb": "fraud cheating",
+    "cheque": "cheque negotiable instrument",
+    "sod": "interest usury riba",
+
+    // Criminal
+    "chori": "theft stolen",
+    "loot": "robbery dacoity",
+    "daka": "dacoity robbery",
+    "qatl": "murder qatl",
+    "khoon": "murder blood",
+    "maar": "assault beating hurt",
+    "marpeet": "assault beating",
+    "gali": "abuse defamation",
+    "tahqeer": "defamation insult",
+    "jhoot": "false accusation perjury",
+    "jhooth": "false accusation",
+    "zina": "zina adultery",
+    "rape": "rape zina-bil-jabr",
+    "zabardasti": "rape coercion",
+
+    // Police & Courts
+    "police": "police FIR investigation",
+    "fir": "FIR first information report",
+    "thanay": "police station FIR",
+    "thana": "police station FIR",
+    "adalat": "court",
+    "judge": "judge court",
+    "wakil": "advocate lawyer counsel",
+    "muqadma": "case suit litigation",
+
+    // Employment
+    "naukri": "employment job service",
+    "tankhwah": "salary wages",
+    "tanakhwah": "salary wages",
+    "malik": "employer master",
+    "nokar": "employee servant",
 };
 
-// Structured JSONL data (much more accurate than PDF parsing)
+function expandQuery(facts) {
+    const lower = facts.toLowerCase();
+    let expanded = facts;
+    const added = [];
+    for (const [term, expansion] of Object.entries(LEGAL_GLOSSARY)) {
+        if (lower.includes(term)) {
+            expanded += " " + expansion;
+            added.push(`${term} → ${expansion}`);
+        }
+    }
+    console.log("Glossary expansions:", added);
+    return expanded;
+}
+
+// ============================================================
+// LAW BOOK REGISTRY
+// ============================================================
+
 const JSONL_BOOKS = [
-    { name: "PPC (Structured)", file: "books/statutes/PPC.jsonl" },
-    { name: "CrPC (Structured)", file: "books/statutes/CrPC.jsonl" },
-    { name: "CPC (Structured)", file: "books/statutes/CPC.jsonl" },
-    { name: "Qanun-e-Shahadat (Structured)", file: "books/statutes/QanoonEShahadat.jsonl" }
+    { name: "Pakistan Penal Code 1860", file: "books/statutes/PPC.jsonl" },
+    { name: "Criminal Procedure Code 1898", file: "books/statutes/CrPC.jsonl" },
+    { name: "Civil Procedure Code 1908", file: "books/statutes/CPC.jsonl" },
+    { name: "Qanun-e-Shahadat 1984", file: "books/statutes/QanoonEShahadat.jsonl" },
 ];
 
 // ============================================================
-// PDF TEXT EXTRACTION (using PDF.js)
+// SEARCH
 // ============================================================
 
-async function extractTextFromPDF(url) {
-    try {
-        const loadingTask = pdfjsLib.getDocument(url);
-        const pdf = await loadingTask.promise;
-        let fullText = "";
-        const maxPages = Math.min(pdf.numPages, 50); // Limit for performance
-
-        for (let i = 1; i <= maxPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map(item => item.str).join(" ");
-            fullText += pageText + "\n";
-        }
-        return fullText;
-    } catch (error) {
-        console.error(`Failed to extract from ${url}:`, error);
-        return "";
-    }
+function tokenize(text) {
+    return text.toLowerCase()
+        .replace(/[^\w\s]/g, " ")
+        .split(/\s+/)
+        .filter(w => w.length > 3);
 }
 
-// ============================================================
-// JSONL PARSING (for structured legal data)
-// ============================================================
-
-async function loadJSONL(url) {
-    try {
-        const response = await fetch(url);
-        const text = await response.text();
-        const lines = text.trim().split("\n").filter(line => line.trim());
-        return lines.map(line => {
-            try {
-                return JSON.parse(line);
-            } catch {
-                return null;
-            }
-        }).filter(Boolean);
-    } catch (error) {
-        console.error(`Failed to load JSONL: ${url}`, error);
-        return [];
-    }
-}
-
-// ============================================================
-// SIMPLE TEXT SEARCH (keyword matching)
-// ============================================================
-
-function searchInText(text, query, maxResults = 5) {
-    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+function searchInJSONL(items, expandedQuery, maxResults = 8) {
+    const words = tokenize(expandedQuery);
     if (words.length === 0) return [];
-
-    const sentences = text.split(/[.!?]\s+/);
-    const results = [];
-
-    for (const sentence of sentences) {
-        let score = 0;
-        const lower = sentence.toLowerCase();
-        for (const word of words) {
-            if (lower.includes(word)) score++;
-        }
-        if (score > 0) {
-            results.push({ sentence: sentence.trim(), score });
-        }
-    }
-
-    return results
-        .sort((a, b) => b.score - a.score)
-        .slice(0, maxResults);
-}
-
-function searchInJSONL(items, query, maxResults = 5) {
-    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 3);
     const results = [];
 
     for (const item of items) {
         const text = (item.text || "").toLowerCase();
         let score = 0;
         for (const word of words) {
-            if (text.includes(word)) score++;
+            if (text.includes(word)) score += 1;
+        }
+        if (item.id && expandedQuery.toLowerCase().includes(item.id.toLowerCase())) {
+            score += 10;
         }
         if (score > 0) {
-            results.push({
-                id: item.id,
-                text: item.text,
-                score
-            });
+            results.push({ id: item.id, text: item.text, score });
         }
     }
 
-    return results
-        .sort((a, b) => b.score - a.score)
-        .slice(0, maxResults);
+    return results.sort((a, b) => b.score - a.score).slice(0, maxResults);
+}
+
+async function loadJSONL(url) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return [];
+        const text = await res.text();
+        return text.trim().split("\n").filter(l => l.trim()).map(l => {
+            try { return JSON.parse(l); } catch { return null; }
+        }).filter(Boolean);
+    } catch (e) {
+        console.warn("JSONL load failed:", url, e);
+        return [];
+    }
 }
 
 // ============================================================
-// MAIN ANALYSIS FUNCTION
+// MAIN ANALYZE FUNCTION
 // ============================================================
 
 async function analyzeCase() {
     const facts = document.getElementById("case-facts").value.trim();
-    const lawType = document.getElementById("law-type").value;
     const status = document.getElementById("status");
     const resultsSection = document.getElementById("results-section");
+    const aiOutput = document.getElementById("ai-output");
     const resultsContent = document.getElementById("results-content");
     const btn = document.getElementById("analyze-btn");
 
-    if (!facts) {
-        alert("Please describe your case facts.");
-        return;
-    }
+    if (!facts) { alert("Please describe your case facts."); return; }
+    if (facts.length < 15) { alert("Please describe your case in more detail (at least 15 characters)."); return; }
 
     btn.disabled = true;
-    status.innerHTML = '<span class="spinner"></span>Analyzing your case... This may take a moment.';
     resultsSection.style.display = "none";
+    aiOutput.innerHTML = "";
 
-    let allFindings = [];
+    try {
+        // ---- STEP 1: Expand query ----
+        status.innerHTML = '<span class="spinner"></span>Understanding your case...';
+        const expandedQuery = expandQuery(facts);
 
-    // Step 1: Search structured JSONL data (most accurate)
-    status.innerHTML = '<span class="spinner"></span>Searching structured legal data...';
+        // ---- STEP 2: Retrieve provisions ----
+        status.innerHTML = '<span class="spinner"></span>Searching law books...';
+        const retrieved = [];
 
-    for (const book of JSONL_BOOKS) {
-        const items = await loadJSONL(book.file);
-        if (items.length > 0) {
-            const matches = searchInJSONL(items, facts);
-            for (const match of matches) {
-                allFindings.push({
+        for (const book of JSONL_BOOKS) {
+            const items = await loadJSONL(book.file);
+            const matches = searchInJSONL(items, expandedQuery);
+            for (const m of matches) {
+                retrieved.push({
                     source: book.name,
-                    id: match.id,
-                    text: match.text,
-                    relevance: match.score
+                    id: m.id,
+                    text: m.text,
+                    score: m.score
                 });
             }
         }
-    }
 
-    // Step 2: Search PDFs (fallback / supplementary)
-    status.innerHTML = '<span class="spinner"></span>Searching law books...';
+        retrieved.sort((a, b) => b.score - a.score);
 
-    const pdfBooks = lawType === "shariah" ? LAW_BOOKS.shariah :
-                     lawType === "pakistani" ? LAW_BOOKS.statutes :
-                     [...LAW_BOOKS.statutes, ...LAW_BOOKS.shariah];
+        const seen = new Set();
+        const topProvisions = retrieved.filter(p => {
+            const key = (p.id || "") + "|" + (p.text || "").substring(0, 80);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        }).slice(0, 8);
 
-    for (const book of pdfBooks) {
-        const text = await extractTextFromPDF(book.file);
-        if (text.length > 0) {
-            const matches = searchInText(text, facts);
-            for (const match of matches) {
-                allFindings.push({
-                    source: book.name,
-                    text: match.sentence,
-                    relevance: match.score
-                });
+        // ---- STEP 3: Show retrieved sources ----
+        if (topProvisions.length === 0) {
+            aiOutput.innerHTML = `<p>No relevant provisions found. Try describing your case with more detail.</p>`;
+            resultsSection.style.display = "block";
+            return;
+        }
+
+        let sourcesHtml = `<p><strong>Retrieved ${topProvisions.length} provisions from the law books:</strong></p>`;
+        for (const p of topProvisions) {
+            sourcesHtml += `
+                <div class="citation">
+                    <strong>📖 ${escapeHtml(p.source)}</strong>
+                    ${p.id ? `<span style="color:#f0c040;"> — ${escapeHtml(p.id)}</span>` : ""}
+                    <p style="margin-top:8px;">${escapeHtml((p.text || "").substring(0, 600))}${(p.text || "").length > 600 ? "..." : ""}</p>
+                </div>`;
+        }
+        resultsContent.innerHTML = sourcesHtml;
+
+        // ---- STEP 4: Build prompt ----
+        const provisionsText = topProvisions.map((p, i) =>
+            `[${i + 1}] ${p.source}${p.id ? " — " + p.id : ""}\n${(p.text || "").substring(0, 800)}`
+        ).join("\n\n");
+
+        const systemPrompt = `You are AI Adalat, a legal reasoning assistant specializing in Pakistani law and Islamic Shariah. You provide educational legal analysis, not binding verdicts.
+
+CRITICAL RULES:
+1. ONLY cite legal provisions from the RETRIEVED PROVISIONS section below. Never invent section numbers.
+2. If the retrieved provisions don't cover the case, say so honestly.
+3. Write in clear, simple language a non-lawyer can understand.
+4. Use markdown formatting with ## headings.
+5. Never claim to issue a binding judgment.
+6. End with practical next steps for the person.
+7. The user may write in English, Urdu, or Roman Urdu. Respond in the SAME language they used.`;
+
+        const userPrompt = `CASE FACTS (may be in English, Urdu, or Roman Urdu):
+${facts}
+
+RETRIEVED PROVISIONS FROM OFFICIAL LAW BOOKS:
+${provisionsText}
+
+Analyze this case using ONLY the retrieved provisions above. Structure your response with these exact markdown headings:
+
+## Legal Issues Identified
+List the legal questions this case raises (2-4 bullet points).
+
+## Applicable Law
+Identify which retrieved provisions apply and why. Quote the section numbers.
+
+## Analysis
+Explain in simple language how the law applies to these facts. If facts are insufficient, state what additional information is needed.
+
+## Suggested Next Steps
+Give 3-5 practical steps the person should take (e.g., file FIR, consult advocate, gather evidence, approach family court).
+
+## Limitations
+Briefly state what this analysis cannot determine.
+
+Be honest and cautious. If uncertain, say so.`;
+
+        // ---- STEP 5: Stream from Worker ----
+        status.innerHTML = '<span class="spinner"></span>AI is reasoning through your case...';
+        resultsSection.style.display = "block";
+        aiOutput.innerHTML = '<div class="ai-response cursor-blink"></div>';
+        const responseDiv = aiOutput.querySelector(".ai-response");
+
+        const response = await fetch(WORKER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt }
+                ],
+                temperature: 0.3,
+                max_tokens: 1500
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error("Worker error:", errText);
+            responseDiv.innerHTML = `<p>⚠️ AI service error. Please try again in a moment.</p>`;
+            responseDiv.classList.remove("cursor-blink");
+            return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let fullText = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop(); // keep last incomplete line
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith("data:")) continue;
+                const data = trimmed.slice(5).trim();
+                if (data === "[DONE]") continue;
+
+                try {
+                    const parsed = JSON.parse(data);
+                    const delta = parsed.choices?.[0]?.delta?.content;
+                    if (delta) {
+                        fullText += delta;
+                        responseDiv.innerHTML = renderMarkdown(fullText);
+                    }
+                } catch {
+                    // partial JSON, ignore
+                }
             }
         }
+
+        responseDiv.classList.remove("cursor-blink");
+        responseDiv.innerHTML = renderMarkdown(fullText);
+
+    } catch (err) {
+        console.error("Analysis failed:", err);
+        aiOutput.innerHTML = `<p>⚠️ Something went wrong. Please try again.</p>`;
+    } finally {
+        status.textContent = "";
+        btn.disabled = false;
     }
-
-    // Step 3: Sort by relevance and deduplicate
-    allFindings.sort((a, b) => b.relevance - a.relevance);
-
-    const seen = new Set();
-    const uniqueFindings = allFindings.filter(f => {
-        const key = f.text.substring(0, 100);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    }).slice(0, 10);
-
-    // Step 4: Display results
-    displayResults(uniqueFindings, facts);
-    btn.disabled = false;
-    status.textContent = "";
 }
 
-function displayResults(findings, facts) {
-    const section = document.getElementById("results-section");
-    const content = document.getElementById("results-content");
+// ============================================================
+// MINIMAL MARKDOWN RENDERER
+// ============================================================
 
-    if (findings.length === 0) {
-        content.innerHTML = `
-            <p>No relevant legal provisions found for your query.</p>
-            <p>Try describing your case with more specific legal terms, or consult a licensed advocate.</p>
-        `;
-        section.style.display = "block";
-        return;
-    }
+function renderMarkdown(md) {
+    let html = escapeHtml(md);
 
-    let html = `<p><strong>Your case:</strong> ${escapeHtml(facts.substring(0, 200))}...</p>`;
-    html += `<h3>Relevant Legal Provisions Found (${findings.length})</h3>`;
+    html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+    html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+    html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
 
-    for (const finding of findings) {
-        html += `
-            <div class="citation">
-                <strong>📖 ${escapeHtml(finding.source)}</strong>
-                ${finding.id ? `<span style="color:#f0c040;"> — ${escapeHtml(finding.id)}</span>` : ""}
-                <p style="margin-top:8px;">${escapeHtml(finding.text.substring(0, 500))}${finding.text.length > 500 ? "..." : ""}</p>
-            </div>
-        `;
-    }
+    // Lists
+    html = html.replace(/^[\-\*] (.+)$/gm, "<li>$1</li>");
+    html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
+    html = html.replace(/(<li>[\s\S]*?<\/li>)(?!\s*<li>)/g, "<ul>$1</ul>");
 
-    html += `
-        <div class="verdict-box">
-            <h3>📋 How to Use This</h3>
-            <p>These are the legal provisions most relevant to your described facts. This is <strong>not a verdict</strong>.</p>
-            <p>Show these citations to a licensed advocate. They will assess how the law applies to your specific situation.</p>
-            <p style="margin-top:12px; color:#8888aa; font-size:0.85rem;">
-                ⚠️ This tool is for legal education only. It does not provide legal advice or binding judgments.
-            </p>
-        </div>
-    `;
+    // Paragraphs
+    html = html.split(/\n{2,}/).map(block => {
+        const t = block.trim();
+        if (/^<(h[1-6]|ul|ol|li|div)/.test(t)) return block;
+        if (!t) return "";
+        return `<p>${block.replace(/\n/g, "<br>")}</p>`;
+    }).join("\n");
 
-    content.innerHTML = html;
-    section.style.display = "block";
-    section.scrollIntoView({ behavior: "smooth" });
+    return html;
 }
 
 function escapeHtml(text) {
@@ -254,14 +383,23 @@ function escapeHtml(text) {
 }
 
 // ============================================================
-// INITIALIZATION
+// EXPOSE TO WINDOW
+// ============================================================
+
+window.analyzeCase = analyzeCase;
+
+// ============================================================
+// INIT
 // ============================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Set up PDF.js worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    console.log("AI Adalat Phase 3 initialized (Groq API).");
+    console.log("Worker URL:", WORKER_URL);
 
-    console.log("AI Adalat initialized.");
-    console.log("Books available:", LAW_BOOKS.statutes.length + LAW_BOOKS.shariah.length);
+    if (WORKER_URL.includes("YOUR-SUBDOMAIN")) {
+        const status = document.getElementById("model-status");
+        if (status) {
+            status.innerHTML = "⚠️ Worker URL not configured. Edit js/app.js and paste your Cloudflare Worker URL.";
+        }
+    }
 });
