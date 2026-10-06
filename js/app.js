@@ -3,7 +3,7 @@
 // ============================================================
 
 // 👇👇👇 PASTE YOUR CLOUDFLARE WORKER URL HERE 👇👇👇
-const WORKER_URL = "https://ai-adalat-proxy.YOUR-SUBDOMAIN.workers.dev";
+const WORKER_URL = "https://ai-adalat-proxy.ssbasemaker.workers.dev";
 // 👆👆👆 (keep it without trailing slash) 👆👆👆
 
 // ============================================================
