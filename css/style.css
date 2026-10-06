@@ -181,3 +181,78 @@ footer {
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
+
+/* ===== Phase 3 additions ===== */
+
+.model-status {
+    font-size: 0.85rem;
+    color: #8888aa;
+    margin-bottom: 12px;
+    padding: 10px 14px;
+    background: #0a0a1a;
+    border-left: 3px solid #40a0ff;
+    border-radius: 4px;
+}
+
+.ai-response {
+    line-height: 1.8;
+    font-size: 0.95rem;
+}
+
+.ai-response h1,
+.ai-response h2 {
+    color: #f0c040;
+    margin-top: 24px;
+    margin-bottom: 12px;
+    font-size: 1.2rem;
+    border-bottom: 1px solid #2a2a5a;
+    padding-bottom: 6px;
+}
+
+.ai-response h3 {
+    color: #d0b030;
+    margin-top: 16px;
+    margin-bottom: 8px;
+    font-size: 1rem;
+}
+
+.ai-response p { margin-bottom: 12px; }
+.ai-response ul, .ai-response ol { margin-left: 24px; margin-bottom: 12px; }
+.ai-response li { margin-bottom: 6px; }
+.ai-response strong { color: #f0c040; }
+
+.ai-response code {
+    background: #1a1a3a;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.85rem;
+    color: #d0b030;
+}
+
+.cursor-blink::after {
+    content: "▋";
+    color: #f0c040;
+    animation: blink 1s step-start infinite;
+    margin-left: 2px;
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+
+details {
+    margin-top: 20px;
+    background: #0a0a1a;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid #2a2a5a;
+}
+
+details summary {
+    cursor: pointer;
+    color: #f0c040;
+    font-weight: 600;
+    user-select: none;
+}
+
+details[open] summary { margin-bottom: 16px; }
