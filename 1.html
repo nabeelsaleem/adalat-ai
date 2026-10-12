@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bucket-Wheel Hydro Generator – Live 3D Demonstration</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b1020;font-family:system-ui,Segoe UI,Roboto,sans-serif;color:#e8eefc}
+  #c{position:fixed;inset:0;display:block}
+  .ui{position:fixed;z-index:10;background:rgba(10,16,34,.82);backdrop-filter:blur(6px);border:1px solid rgba(120,160,255,.25);border-radius:12px;padding:14px 16px;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  #panel{top:16px;left:16px;width:300px}
+  #panel h1{font-size:17px;margin:0 0 6px}
+  #panel p{font-size:12px;opacity:.8;margin:0 0 10px;line-height:1.4}
+  .row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px}
+  input[type=range]{flex:1}
+  button{background:#2b4bff;color:#fff;border:0;border-radius:8px;padding:7px 11px;font-size:13px;cursor:pointer}
+  button.sec{background:rgba(255,255,255,.12)}
+  button:hover{filter:brightness(1.15)}
+  #stats{font-size:12px;line-height:1.6;margin-top:8px;border-top:1px solid rgba(255,255,255,.12);padding-top:8px}
+  #stats b{color:#7fe7ff}
+  #info{top:16px;right:16px;width:340px;max-height:60vh;overflow:auto}
+  #info h2{font-size:16px;margin:0 0 6px;color:#ffd86b}
+  #info .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(127,231,255,.15);color:#7fe7ff;margin-bottom:8px}
+  #info p{font-size:13px;line-height:1.5;margin:6px 0}
+  #info ul{font-size:13px;line-height:1.5;padding-left:18px;margin:6px 0}
+  #reality{bottom:16px;left:16px;right:16px;max-width:900px;margin:auto;font-size:12.5px;line-height:1.5;border-color:rgba(255,120,120,.4)}
+  #reality b{color:#ff9b9b}
+  #hint{bottom:16px;right:16px;font-size:12px;opacity:.7;padding:8px 12px}
+  #showui{position:fixed;z-index:11;right:14px;top:14px;display:none;opacity:.45}
+  #showui:hover{opacity:1}
+  .label{color:#fff;font-size:12px;font-weight:600;background:rgba(0,0,0,.55);padding:3px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.2);white-space:nowrap;cursor:pointer;pointer-events:auto}
+  .label:hover{background:#2b4bff}
+  .label small{display:block;font-weight:400;opacity:.8;font-size:10.5px}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="panel" class="ui">
+  <h1>Bucket-Wheel Hydro Generator</h1>
+  <p>Interactive 3D model of the diagram: water falls from a header tank into buckets on a chain wheel, the wheel turns a gear train and a low‑RPM generator, a charge controller feeds batteries and appliances, and a pump lifts the water back up. Click any component or label for its notes.</p>
+  <div class="row">Speed <input id="speed" type="range" min="0" max="3" step="0.05" value="1"><span id="speedv">1.0×</span></div>
+  <div class="row">
+    <button id="pause">⏸ Pause</button>
+    <button id="labels" class="sec">Labels: on</button>
+    <button id="reset" class="sec">Reset view</button>
+  </div>
+  <div class="row"><button id="hide" class="sec" style="width:100%">Hide all UI (H)</button></div>
+  <div id="stats"></div>
+</div>
+
+<div id="info" class="ui">
+  <h2>Select a component</h2>
+  <span class="tag">Overview</span>
+  <p>Click on the tank, buckets, gears, generator, controller, batteries, appliances, pump or the storage tank in the 3D scene — or click a floating label — to read what it does and why it is there.</p>
+</div>
+
+<div id="reality" class="ui">
+  <b>Reality check (physics):</b> The diagram claims 5 kW out for 1 kW of pumping. Energy from falling water is
+  <i>m·g·h</i>: 140 kg × 9.81 m/s² × ~4.5 m ≈ <b>6.2 kJ</b> per full load of buckets. Lifting that same 140 kg back to the top tank needs
+  <i>at least</i> the same 6.2 kJ — and real pumps, chains, gears, generators and batteries each lose 10–40 %. So the pump always consumes
+  <b>more</b> than the generator produces; the machine would slow and stop within seconds unless an outside energy source (grid, solar, fuel) runs the pump.
+  The animation below is driven by a fixed motor speed to show the <i>mechanism</i>, not a self‑sustaining energy loop.
+</div>
+<div id="hint" class="ui">Drag to orbit · Scroll to zoom · Right‑drag to pan · H toggles UI</div>
+<button id="showui" class="sec">Show UI</button>
+
+<script type="importmap">
+{ "imports": {
+  "three": "[unpkg.com](https://unpkg.com/three@0.160.0/build/three.module.js)",
+  "three/addons/": "[unpkg.com](https://unpkg.com/three@0.160.0/examples/jsm/)"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ---------------- Renderer / Scene ---------------- */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:5';
+document.body.appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1020);
+scene.fog = new THREE.Fog(0x0b1020, 30, 70);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, .1, 200);
+const HOME_POS = new THREE.Vector3(4.5, 7, 19), HOME_TGT = new THREE.Vector3(4.5, 4.2, 0);
+camera.position.copy(HOME_POS);
+const controls = new OrbitControls(camera, canvas);
+controls.target.copy(HOME_TGT); controls.enableDamping = true; controls.maxPolarAngle = Math.PI*0.52;
+
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x202030, 0.7));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(8, 16, 10); sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-14,right:14,top:14,bottom:-6,near:1,far:50});
+scene.add(sun);
+const fill = new THREE.PointLight(0x7fa0ff, 20, 30); fill.position.set(-6, 6, 6); scene.add(fill);
+
+// Floor
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(80,80), new THREE.MeshStandardMaterial({color:0x141a2e, roughness:.9}));
+floor.rotation.x = -Math.PI/2; floor.position.y = -0.01; floor.receiveShadow = true; scene.add(floor);
+const grid = new THREE.GridHelper(80, 80, 0x2a3558, 0x1a2240); grid.position.y = 0; scene.add(grid);
+
+/* ---------------- Materials ---------------- */
+const M = {
+  tankBlue: new THREE.MeshStandardMaterial({color:0x1e4fa3, roughness:.5, metalness:.1}),
+  water:    new THREE.MeshPhysicalMaterial({color:0x2fe8ff, transparent:true, opacity:.55, roughness:.1, transmission:.3, emissive:0x0a5a66, emissiveIntensity:.4}),
+  pipe:     new THREE.MeshStandardMaterial({color:0x5fd3ff, roughness:.3, metalness:.2}),
+  copper:   new THREE.MeshStandardMaterial({color:0xb0533a, roughness:.45, metalness:.4}),
+  steel:    new THREE.MeshStandardMaterial({color:0xb8bcc8, roughness:.35, metalness:.8}),
+  dark:     new THREE.MeshStandardMaterial({color:0x22242c, roughness:.5, metalness:.6}),
+  gen:      new THREE.MeshStandardMaterial({color:0x2a2d36, roughness:.4, metalness:.7}),
+  red:      new THREE.MeshStandardMaterial({color:0xd81e1e, roughness:.5}),
+  black:    new THREE.MeshStandardMaterial({color:0x111111, roughness:.6}),
+  white:    new THREE.MeshStandardMaterial({color:0xe8e8ea, roughness:.6}),
+  ctrl:     new THREE.MeshStandardMaterial({color:0x1b3a7a, roughness:.4}),
+  screen:   new THREE.MeshStandardMaterial({color:0x111, emissive:0x33ffcc, emissiveIntensity:.8}),
+  pumpBlue: new THREE.MeshStandardMaterial({color:0x2a6ad8, roughness:.4, metalness:.3}),
+  wireRed:  new THREE.MeshStandardMaterial({color:0xff2a2a}),
+  wireBlk:  new THREE.MeshStandardMaterial({color:0x101010}),
+  glass:    new THREE.MeshPhysicalMaterial({color:0x9fd8ff, transparent:true, opacity:.18, roughness:.05, side:THREE.DoubleSide}),
+  glow:     new THREE.MeshBasicMaterial({color:0xffe08a}),
+};
+
+const pickables = []; // meshes with userData.info
+function tag(obj, info){ obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; o.userData.info=info; pickables.push(o);} }); return obj; }
+function label(text, sub, pos, info){
+  const d=document.createElement('div'); d.className='label'; d.innerHTML=text+(sub?`<small>${sub}</small>`:'');
+  d.onclick=()=>showInfo(info);
+  const l=new CSS2DObject(d); l.position.copy(pos); scene.add(l); labels.push(l); return l;
+}
+const labels=[];
+
+/* ---------------- Component notes ---------------- */
+const INFO = {
+  topTank:{ title:'Header (Top) Water Tank', tag:'Potential energy store', body:`
+    <p><b>What it does:</b> Holds water at height. The higher the tank, the more gravitational potential energy each kilogram of water carries (E = m·g·h).</p>
+    <p><b>Purpose in the loop:</b> Acts as a buffer so the bucket wheel receives a steady, controllable flow through the tap, independent of pump pulses.</p>
+    <ul><li>Tap/valve sets flow rate → sets wheel torque and speed.</li><li>Every litre released here must later be pumped back up — that is the energy cost of the cycle.</li></ul>`},
+  tap:{ title:'Tap / Outlet Valve', tag:'Flow control', body:`
+    <p><b>What it does:</b> Meters water from the header tank into the buckets.</p>
+    <p><b>Purpose:</b> Matching flow to the wheel’s bucket volume (20 kg each in the diagram) so buckets fill just as they pass under the stream and the wheel turns smoothly.</p>`},
+  buckets:{ title:'Bucket Chain Wheel (Overshot Water Wheel)', tag:'Energy converter: gravity → rotation', body:`
+    <p><b>What it does:</b> Water fills buckets on the descending (left) side. The loaded side is heavier than the empty ascending side, so gravity pulls the chain around. At the bottom each bucket tips and dumps its water into the storage tank.</p>
+    <p><b>Diagram claim:</b> 7 buckets × 20 kg = 140 kg of water weight driving the wheel.</p>
+    <ul><li>Torque ≈ (loaded mass × g) × wheel radius.</li><li>Power = torque × angular speed — so a slow heavy wheel produces little power unless geared up.</li><li>Real wheels of this kind reach 60–80 % efficiency at best.</li></ul>`},
+  sprocket:{ title:'Sprockets & Chain', tag:'Mechanical transmission', body:`
+    <p><b>What it does:</b> Guides the bucket chain and transfers the wheel’s rotation to the bottom shaft, which drives the gear train.</p>
+    <p><b>Purpose:</b> Chain drive lets the two sprockets be far apart so buckets get a long vertical drop (more head = more energy).</p>`},
+  gears:{ title:'Gear Train (Speed Increaser)', tag:'Low speed/high torque → higher RPM', body:`
+    <p><b>What it does:</b> Converts the slow, high‑torque rotation of the bucket wheel into faster rotation suitable for the generator.</p>
+    <p><b>Purpose:</b> Generators need a minimum RPM to produce usable voltage. The gear ratio trades torque for speed; power stays the same minus friction (≈2–5 % per stage).</p>`},
+  generator:{ title:'5 kW Low‑RPM Permanent‑Magnet Generator', tag:'Rotation → DC electricity', body:`
+    <p><b>What it does:</b> Rotating magnets sweep past copper coils, inducing voltage (Faraday’s law). Output is rectified to DC for the controller.</p>
+    <p><b>Purpose:</b> This is the point where mechanical power becomes electrical power.</p>
+    <ul><li>“5 kW” is the <i>rating</i> — the maximum it can deliver if driven with 5 kW+ of mechanical input.</li><li>Here the available input is only what the falling water provides (see reality check), so actual output would be a small fraction of the rating.</li></ul>`},
+  controller:{ title:'DC Charge Controller', tag:'Power management', body:`
+    <p><b>What it does:</b> Regulates generator voltage, prevents battery over‑charge and deep discharge, and routes power to loads.</p>
+    <p><b>Purpose:</b> Protects the batteries and gives the appliances stable voltage even as wheel speed fluctuates.</p>`},
+  batteries:{ title:'Battery Bank (3 × 12 V Tubular)', tag:'Energy storage', body:`
+    <p><b>What it does:</b> Stores surplus electricity chemically and releases it when loads exceed generation.</p>
+    <p><b>Purpose:</b> Smooths the mismatch between steady generation and bursty household use; also provides a start‑up supply for the pump.</p>
+    <ul><li>Round‑trip efficiency ~80–90 % (lead‑acid): another loss in the loop.</li></ul>`},
+  appliances:{ title:'Home Appliances (Load)', tag:'Energy consumer', body:`
+    <p><b>What it does:</b> Uses the stored/generated electricity — stove, kettle, fridge, washing machine, mixer.</p>
+    <p><b>Purpose:</b> The useful output of the system. Any power drawn here is power that cannot go back to the pump.</p>`},
+  pump:{ title:'12 V Water Pump (Return Pump)', tag:'Energy consumer — closes the loop', body:`
+    <p><b>What it does:</b> Lifts water from the storage tank back to the header tank through the riser pipe.</p>
+    <p><b>Diagram claim:</b> needs only 1 kW while the wheel makes 5 kW.</p>
+    <p><b>Physics:</b> Lifting water costs exactly m·g·h — the same energy the water released on the way down — plus pump losses (small 12 V pumps are typically 30–60 % efficient). The pump therefore <b>must</b> consume more than the wheel generates. Without an external supply the loop cannot sustain itself.</p>`},
+  pipe:{ title:'Riser Pipe', tag:'Water return path', body:`
+    <p><b>What it does:</b> Carries pumped water up to the header tank. Pipe friction adds to the pump’s workload.</p>`},
+  lowerTank:{ title:'Waterfall Storage Tank (Sump)', tag:'Collection reservoir', body:`
+    <p><b>What it does:</b> Catches water dumped by the buckets so none is lost; the pump draws from it.</p>
+    <p><b>Purpose:</b> Makes the water a closed loop — only the <i>energy</i> is open, which is the problem for the “self‑running” claim.</p>`},
+  wires:{ title:'DC Wiring', tag:'Electrical paths', body:`
+    <p>Red = positive, black = negative. Generator → controller → batteries/appliances, and controller → pump. Cable resistance causes small I²R losses.</p>`},
+};
+function showInfo(i){ const el=document.getElementById('info'); el.innerHTML=`<h2>${i.title}</h2><span class="tag">${i.tag}</span>${i.body}`; }
+
+/* ---------------- Geometry helpers ---------------- */
+function tube(points, r, mat, closed=false){
+  const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)), closed, 'catmullrom', 0.05);
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(16, points.length*12), r, 10, closed), mat);
+}
+function gear(radius, teeth, thickness, mat){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, thickness, 48), mat);
+  body.rotation.x=Math.PI/2; g.add(body);
+  const th=new THREE.BoxGeometry(radius*0.18, radius*0.22, thickness);
+  for(let i=0;i<teeth;i++){ const t=new THREE.Mesh(th, mat); const a=i/teeth*Math.PI*2;
+    t.position.set(Math.cos(a)*radius*1.06, Math.sin(a)*radius*1.06, 0); t.rotation.z=a; g.add(t);}
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(radius*0.25, radius*0.25, thickness*1.6, 24), M.dark); hub.rotation.x=Math.PI/2; g.add(hub);
+  for(let i=0;i<5;i++){ const s=new THREE.Mesh(new THREE.BoxGeometry(radius*0.08, radius*0.75, thickness*0.4), M.dark); const a=i/5*Math.PI*2; s.position.set(Math.cos(a)*radius*0.45, Math.sin(a)*radius*0.45, 0); s.rotation.z=a+Math.PI/2; g.add(s);}
+  return g;
+}
+
+/* ---------------- Lower storage tank ---------------- */
+const LT={x:0.5,y:0,w:9,h:1.4,d:2.4};
+const lowerTank=new THREE.Group();
+const tankWall=new THREE.Mesh(new THREE.BoxGeometry(LT.w, LT.h, LT.d), M.glass); tankWall.position.set(LT.x+LT.w/2, LT.h/2, 0); lowerTank.add(tankWall);
+const tankEdge=new THREE.LineSegments(new THREE.EdgesGeometry(tankWall.geometry), new THREE.LineBasicMaterial({color:0xb0533a})); tankEdge.position.copy(tankWall.position); lowerTank.add(tankEdge);
+const lowerWater=new THREE.Mesh(new THREE.BoxGeometry(LT.w-0.1, LT.h*0.8, LT.d-0.1), M.water); lowerWater.position.set(LT.x+LT.w/2, LT.h*0.4, 0); lowerTank.add(lowerWater);
+scene.add(tag(lowerTank, INFO.lowerTank));
+label('Waterfall storage tank','collects dumped water', new THREE.Vector3(LT.x+1.2, LT.h+0.4, 1.2), INFO.lowerTank);
+
+/* ---------------- Pump ---------------- */
+const pump=new THREE.Group();
+const pbody=new THREE.Mesh(new THREE.CylinderGeometry(.42,.42,1.1,32), M.pumpBlue); pbody.rotation.z=Math.PI/2; pump.add(pbody);
+const phead=new THREE.Mesh(new THREE.SphereGeometry(.45,32,16), M.pumpBlue); phead.position.x=-0.6; pump.add(phead);
+const pbase=new THREE.Mesh(new THREE.BoxGeometry(1.2,.15,.8), M.dark); pbase.position.y=-.45; pump.add(pbase);
+for(let i=0;i<6;i++){ const fin=new THREE.Mesh(new THREE.BoxGeometry(.9,.9,.03), M.pumpBlue); fin.position.x=.1; fin.rotation.x=i/6*Math.PI; pump.add(fin);}
+const pumpFan=new THREE.Mesh(new THREE.CylinderGeometry(.2,.2,.1,6), M.dark); pumpFan.rotation.z=Math.PI/2; pumpFan.position.x=.6; pump.add(pumpFan);
+pump.position.set(-1.6, 2.1, 0);
+scene.add(tag(pump, INFO.pump));
+label('12 V water pump','lifts water back up (consumes power)', new THREE.Vector3(-1.6, 3.1, 0), INFO.pump);
+
+/* ---------------- Pipes ---------------- */
+// suction pipe: from lower tank into pump
+const suction=tube([[1.0,0.4,0],[-0.4,0.4,0],[-2.3,0.4,0],[-2.3,2.1,0],[-2.1,2.1,0]], .12, M.pipe);
+// riser: pump top up to header tank
+const riser=tube([[-1.6,2.5,0],[-1.6,6,0],[-1.6,11.2,0],[-1.3,11.6,0],[-1.0,11.6,0],[-1.0,11.2,0]], .12, M.pipe);
+scene.add(tag(suction, INFO.pipe)); scene.add(tag(riser, INFO.pipe));
+// outlet from header to tap
+const outlet=tube([[-0.3,8.6,0],[0.9,8.6,0],[1.5,8.6,0],[1.5,8.2,0]], .1, M.pipe);
+scene.add(tag(outlet, INFO.tap));
+const tapHandle=new THREE.Mesh(new THREE.TorusGeometry(.16,.04,8,24), M.red); tapHandle.position.set(1.2,8.85,0); tapHandle.rotation.x=Math.PI/2; scene.add(tag(tapHandle, INFO.tap));
+label('Tap / valve','controls flow rate', new THREE.Vector3(1.2, 9.3, 0), INFO.tap);
+
+/* ---------------- Header tank ---------------- */
+const headTank=new THREE.Group();
+const hb=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,3.2,40), M.tankBlue); headTank.add(hb);
+for(let i=0;i<6;i++){ const ring=new THREE.Mesh(new THREE.TorusGeometry(1.22,.05,8,48), M.tankBlue); ring.rotation.x=Math.PI/2; ring.position.y=-1.3+i*.52; headTank.add(ring);}
+const cap=new THREE.Mesh(new THREE.CylinderGeometry(.35,.4,.3,24), M.dark); cap.position.y=1.7; headTank.add(cap);
+const hbase=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,.15,40), M.dark); hbase.position.y=-1.65; headTank.add(hbase);
+const stand=new THREE.Mesh(new THREE.CylinderGeometry(.9,1.1,5.9,24,1,true), new THREE.MeshStandardMaterial({color:0x2a3350, roughness:.8, side:THREE.DoubleSide, transparent:true, opacity:.5}));
+stand.position.y=-4.7; headTank.add(stand);
+headTank.position.set(-1.0, 9.6, 0);
+scene.add(tag(headTank, INFO.topTank));
+label('Header tank','stores water at height = potential energy', new THREE.Vector3(-1.0, 11.9, 0), INFO.topTank);
+label('Riser pipe','pumped water goes up', new THREE.Vector3(-1.9, 6.0, 0), INFO.pipe);
+
+/* ---------------- Bucket chain wheel ---------------- */
+const CW={cx:3.0, yTop:7.2, yBot:2.6, r:0.75};
+const chainLen = 2*(CW.yTop-CW.yBot) + 2*Math.PI*CW.r;
+// path: start at left-top, go down left side, bottom semicircle, up right side, top semicircle
+function chainPos(s){
+  s=((s%chainLen)+chainLen)%chainLen;
+  const H=CW.yTop-CW.yBot, arc=Math.PI*CW.r;
+  if(s<H) return {x:CW.cx-CW.r, y:CW.yTop-s, side:'down', t:s/H};
+  s-=H;
+  if(s<arc){ const a=Math.PI+ s/CW.r; return {x:CW.cx+Math.cos(a)*CW.r, y:CW.yBot+Math.sin(a)*CW.r, side:'bottom', t:s/arc}; }
+  s-=arc;
+  if(s<H) return {x:CW.cx+CW.r, y:CW.yBot+s, side:'up', t:s/H};
+  s-=H;
+  const a= s/CW.r; return {x:CW.cx+Math.cos(a)*CW.r, y:CW.yTop+Math.sin(a)*CW.r, side:'top', t:s/arc};
+}
+// chain as closed tube
+const chainPts=[]; for(let i=0;i<120;i++){ const p=chainPos(i/120*chainLen); chainPts.push([p.x,p.y,0]); }
+const chainMesh=tube(chainPts, .05, M.steel, true); scene.add(tag(chainMesh, INFO.sprocket));
+// chain links (small torus) for motion visibility
+const linkGeo=new THREE.TorusGeometry(.09,.03,6,12); const links=[]; const NLINK=60;
+for(let i=0;i<NLINK;i++){ const l=new THREE.Mesh(linkGeo, M.steel); scene.add(l); links.push(l); }
+// sprockets
+const sprTop=gear(CW.r*0.95, 14, .25, M.steel); sprTop.position.set(CW.cx, CW.yTop, 0);
+const sprBot=gear(CW.r*0.95, 14, .25, M.steel); sprBot.position.set(CW.cx, CW.yBot, 0);
+scene.add(tag(sprTop, INFO.sprocket)); scene.add(tag(sprBot, INFO.sprocket));
+// frame / axles
+const axleTop=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,1.4,16), M.dark); axleTop.rotation.x=Math.PI/2; axleTop.position.set(CW.cx,CW.yTop,0); scene.add(axleTop);
+const axleBot=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,1.4,16), M.dark); axleBot.rotation.x=Math.PI/2; axleBot.position.set(CW.cx,CW.yBot,0); scene.add(axleBot);
+for(const z of [-0.7,0.7]){ const post=new THREE.Mesh(new THREE.BoxGeometry(.12,CW.yTop+.4,.12), M.dark); post.position.set(CW.cx,(CW.yTop+.4)/2,z); post.castShadow=true; scene.add(post);}
+// buckets
+const NB=14, buckets=[];
+const bucketOuter=new THREE.Mesh(new THREE.SphereGeometry(.42,24,12,0,Math.PI*2,Math.PI/2,Math.PI/2), new THREE.MeshStandardMaterial({color:0xb0533a, roughness:.5, metalness:.3, side:THREE.DoubleSide}));
+for(let i=0;i<NB;i++){
+  const g=new THREE.Group();
+  const shell=bucketOuter.clone(); g.add(shell);
+  const rim=new THREE.Mesh(new THREE.TorusGeometry(.42,.03,8,32), M.copper); rim.rotation.x=Math.PI/2; g.add(rim);
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(.5,.06,.06), M.copper); arm.position.set(.25+.42, -.05, 0); g.add(arm);
+  const water=new THREE.Mesh(new THREE.CylinderGeometry(.38,.3,.3,24), M.water); water.position.y=-.15; g.add(water);
+  g.userData.water=water; g.userData.arm=arm;
+  scene.add(tag(g, INFO.buckets)); buckets.push(g);
+}
+label('Bucket chain wheel','7 loaded buckets × 20 kg = 140 kg driving torque', new THREE.Vector3(CW.cx-1.6, 5.2, 0.6), INFO.buckets);
+label('Sprockets & chain','transmit rotation to gear train', new THREE.Vector3(CW.cx+1.3, CW.yTop+.3, 0), INFO.sprocket);
+
+/* ---------------- Gear train ---------------- */
+const g1=gear(.75,22,.2,M.steel); g1.position.set(CW.cx, CW.yBot, .5);   // on bottom sprocket shaft
+const g2=gear(.42,12,.2,M.steel); g2.position.set(CW.cx+1.17, CW.yBot-.1, .5);
+const g3=gear(.75,22,.2,M.steel); g3.position.set(CW.cx+1.17, CW.yBot-.1, .9);
+const g4=gear(.32,9,.2,M.steel);  g4.position.set(CW.cx+2.22, CW.yBot-.3, .9);
+const gearGroup=new THREE.Group(); gearGroup.add(g1,g2,g3,g4); scene.add(tag(gearGroup, INFO.gears));
+for(const g of [g2,g4]){ const ax=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,1.2,12), M.dark); ax.rotation.x=Math.PI/2; ax.position.copy(g.position); ax.position.z=.6; scene.add(ax);}
+label('Gear train','steps slow wheel up to generator RPM', new THREE.Vector3(CW.cx+1.2, CW.yBot-1.1, .7), INFO.gears);
+
+/* ---------------- Generator ---------------- */
+const gen=new THREE.Group();
+const gbody=new THREE.Mesh(new THREE.CylinderGeometry(.55,.55,1.0,40), M.gen); gbody.rotation.x=Math.PI/2; gen.add(gbody);
+for(let i=0;i<10;i++){ const fin=new THREE.Mesh(new THREE.BoxGeometry(.06,1.2,.9), M.gen); fin.rotation.z=i/10*Math.PI; gen.add(fin);}
+const genFace=new THREE.Mesh(new THREE.CylinderGeometry(.4,.4,.06,32), M.dark); genFace.rotation.x=Math.PI/2; genFace.position.z=.53; gen.add(genFace);
+const genShaft=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,.5,16), M.steel); genShaft.rotation.x=Math.PI/2; genShaft.position.z=.75; gen.add(genShaft);
+const genRotor=gear(.3,8,.1,M.copper); genRotor.position.z=.95; gen.add(genRotor);
+for(let i=0;i<8;i++){ const bolt=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.1,8), M.steel); bolt.rotation.x=Math.PI/2; const a=i/8*Math.PI*2; bolt.position.set(Math.cos(a)*.3, Math.sin(a)*.3, .58); gen.add(bolt);}
+const genMount=new THREE.Mesh(new THREE.BoxGeometry(1.2,.2,1.0), M.dark); genMount.position.y=-.75; gen.add(genMount);
+gen.position.set(CW.cx+2.22, CW.yBot-.3, -.2);
+scene.add(tag(gen, INFO.generator));
+const genGlow=new THREE.PointLight(0xffd36b, 0, 4); genGlow.position.copy(gen.position); scene.add(genGlow);
+label('5 kW low‑RPM generator','rotation → DC electricity', new THREE.Vector3(CW.cx+2.4, CW.yBot+1.0, -.4), INFO.generator);
+
+/* ---------------- Charge controller ---------------- */
+const ctrl=new THREE.Group();
+const cbox=new THREE.Mesh(new THREE.BoxGeometry(1.4,.9,.35), M.ctrl); ctrl.add(cbox);
+const scr=new THREE.Mesh(new THREE.BoxGeometry(.5,.3,.02), M.screen); scr.position.set(0,.1,.18); ctrl.add(scr);
+for(let i=0;i<4;i++){ const led=new THREE.Mesh(new THREE.SphereGeometry(.04,8,8), new THREE.MeshStandardMaterial({color:0x222, emissive:[0x00ff66,0xffcc00,0xff3333,0x3399ff][i], emissiveIntensity:1})); led.position.set(-.5+i*.18,-.2,.18); ctrl.add(led); }
+for(let i=0;i<6;i++){ const term=new THREE.Mesh(new THREE.BoxGeometry(.15,.15,.1), M.dark); term.position.set(-.5+i*.2,-.4,.18); ctrl.add(term);}
+ctrl.position.set(9.0, 5.2, 0);
+scene.add(tag(ctrl, INFO.controller));
+label('DC charge controller','regulates & routes power', new THREE.Vector3(9.0, 6.0, 0), INFO.controller);
+
+/* ---------------- Batteries ---------------- */
+const batts=new THREE.Group();
+for(let i=0;i<3;i++){
+  const b=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.4,.7), M.red); b.add(body);
+  const lid=new THREE.Mesh(new THREE.BoxGeometry(1.1,.1,.7), M.black); lid.position.y=.72; b.add(lid);
+  const lbl=new THREE.Mesh(new THREE.BoxGeometry(.8,.4,.02), M.white); lbl.position.set(0,.1,.36); b.add(lbl);
+  for(const [x,m] of [[-.35,M.wireRed],[.35,M.wireBlk]]){ const t=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,.2,12), m); t.position.set(x,.85,0); b.add(t);}
+  b.position.x=i*1.5; batts.add(b);
+}
+batts.position.set(8.2, .8, 1.6);
+scene.add(tag(batts, INFO.batteries));
+label('Battery bank','stores surplus electricity', new THREE.Vector3(9.7, 2.3, 1.6), INFO.batteries);
+
+/* ---------------- Appliances ---------------- */
+const app=new THREE.Group();
+function box(w,h,d,mat,x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x,y,z); app.add(m); return m; }
+box(.9,1.2,.8,M.white,0,.6,0); box(.8,.05,.7,M.black,0,1.22,0);            // stove
+for(let i=0;i<4;i++){ const burner=new THREE.Mesh(new THREE.TorusGeometry(.12,.03,8,16),M.dark); burner.rotation.x=Math.PI/2; burner.position.set(-.22+(i%2)*.44,1.26,-.18+Math.floor(i/2)*.36); app.add(burner);}
+box(.9,1.1,.8,M.white,1.1,.55,0); box(.7,.6,.02,new THREE.MeshStandardMaterial({color:0x222}),1.1,.5,.41); // dishwasher
+box(.9,1.9,.8,M.white,2.2,.95,0); box(.9,.02,.8,M.dark,2.2,1.3,0);          // fridge
+box(.9,1.1,.8,M.white,3.3,.55,0); const drum=new THREE.Mesh(new THREE.TorusGeometry(.25,.05,8,32),M.dark); drum.position.set(3.3,.55,.41); app.add(drum); // washer
+const kettle=new THREE.Mesh(new THREE.CylinderGeometry(.18,.22,.4,16),M.dark); kettle.position.set(1.1,1.3,0); app.add(kettle);
+app.position.set(9.6, 0, -2.6);
+scene.add(tag(app, INFO.appliances));
+label('Home appliances','the useful load', new THREE.Vector3(11.3, 2.6, -2.6), INFO.appliances);
+
+/* ---------------- Wires ---------------- */
+const GEN=[CW.cx+2.22, CW.yBot-.3, -.2];
+const wires=new THREE.Group();
+wires.add(tube([[GEN[0]+.3,GEN[1]+.5,GEN[2]],[GEN[0]+1.2,GEN[1]+1.6,0],[7.5,4.9,0],[8.5,4.8,.2]], .035, M.wireRed));
+wires.add(tube([[GEN[0]+.1,GEN[1]+.5,GEN[2]-.3],[GEN[0]+1.1,GEN[1]+1.3,-.3],[7.6,4.6,-.2],[8.7,4.8,.2]], .035, M.wireBlk));
+wires.add(tube([[9.0,4.75,.2],[8.9,3.5,.9],[7.85,1.7,1.6]], .035, M.wireRed));
+wires.add(tube([[9.2,4.75,.2],[9.3,3.3,1.0],[8.55,1.7,1.6]], .035, M.wireBlk));
+wires.add(tube([[9.5,5.2,.2],[10.4,5.0,-.6],[10.7,2.0,-2.2]], .035, M.wireRed));
+wires.add(tube([[9.3,5.2,.2],[10.2,4.8,-.9],[10.9,2.0,-2.4]], .035, M.wireBlk));
+wires.add(tube([[8.6,4.75,.2],[6.0,3.6,1.0],[2.0,1.7,1.1],[-1.0,1.7,.4]], .035, M.wireRed));
+wires.add(tube([[8.8,4.75,.2],[6.2,3.3,1.2],[2.2,1.5,1.3],[-1.0,1.5,.4]], .035, M.wireBlk));
+scene.add(tag(wires, INFO.wires));
+label('DC wiring','red +, black −', new THREE.Vector3(6.5, 4.2, 1.0), INFO.wires);
+// energy pulses travelling along wires
+const pulseGeo=new THREE.SphereGeometry(.07,8,8); const pulses=[];
+wires.children.forEach((w,i)=>{ for(let k=0;k<3;k++){ const p=new THREE.Mesh(pulseGeo, M.glow); p.userData={curve:w.geometry.parameters.path, off:k/3, dir:(i<2||i>=6)?1:1}; scene.add(p); pulses.push(p);} });
+
+/* ---------------- Water particles ---------------- */
+// falling stream from tap to the bucket column
+const NP=140; const dropGeo=new THREE.SphereGeometry(.06,6,6);
+const drops=[]; for(let i=0;i<NP;i++){ const d=new THREE.Mesh(dropGeo, M.water); d.userData.t=Math.random(); d.userData.jx=(Math.random()-.5)*.18; d.userData.jz=(Math.random()-.5)*.18; scene.add(d); drops.push(d);}
+// dump splash from bottom buckets
+const NS=60; const splash=[]; for(let i=0;i<NS;i++){ const d=new THREE.Mesh(dropGeo, M.water); d.userData={t:Math.random(), vx:(Math.random()-.5)*1.2, vz:(Math.random()-.5)*1.2}; scene.add(d); splash.push(d);}
+// riser pipe flow markers
+const NR=24; const riserFlow=[]; for(let i=0;i<NR;i++){ const d=new THREE.Mesh(new THREE.SphereGeometry(.08,6,6), new THREE.MeshBasicMaterial({color:0xaaf6ff})); d.userData.t=i/NR; scene.add(d); riserFlow.push(d);}
+const riserCurve=riser.geometry.parameters.path, suctionCurve=suction.geometry.parameters.path, outletCurve=outlet.geometry.parameters.path;
+
+/* ---------------- UI wiring ---------------- */
+let speed=1, paused=false, labelsOn=true, uiHidden=false, chainS=0, t=0;
+const $=id=>document.getElementById(id);
+$('speed').oninput=e=>{speed=+e.target.value; $('speedv').textContent=speed.toFixed(1)+'×';};
+$('pause').onclick=()=>{paused=!paused; $('pause').textContent=paused?'▶ Play':'⏸ Pause';};
+$('labels').onclick=()=>{labelsOn=!labelsOn; $('labels').textContent='Labels: '+(labelsOn?'on':'off'); labels.forEach(l=>l.visible=labelsOn);};
+$('reset').onclick=()=>{camera.position.copy(HOME_POS); controls.target.copy(HOME_TGT);};
+function setUI(hidden){ uiHidden=hidden; document.querySelectorAll('.ui').forEach(e=>e.classList.toggle('hidden',hidden)); labelRenderer.domElement.classList.toggle('hidden',hidden); $('showui').style.display=hidden?'block':'none'; }
+$('hide').onclick=()=>setUI(true); $('showui').onclick=()=>setUI(false);
+addEventListener('keydown',e=>{ if(e.key==='h'||e.key==='H') setUI(!uiHidden); if(e.key===' '){ $('pause').click(); e.preventDefault(); }});
+
+// Picking
+const ray=new THREE.Raycaster(), mouse=new THREE.Vector2(); let downAt=null;
+canvas.addEventListener('pointerdown',e=>downAt=[e.clientX,e.clientY]);
+canvas.addEventListener('pointerup',e=>{
+  if(!downAt||Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>5) return;
+  mouse.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1); ray.setFromCamera(mouse,camera);
+  const hit=ray.intersectObjects(pickables,false)[0]; if(hit&&hit.object.userData.info) showInfo(hit.object.userData.info);
+});
+
+/* ---------------- Animation ---------------- */
+const clock=new THREE.Clock();
+const WHEEL_SPEED=0.9; // chain metres per second at 1×
+const liveStats=()=>{
+  const omega=WHEEL_SPEED*speed/CW.r;                     // rad/s of sprockets
+  const rpm=omega*60/(2*Math.PI);
+  const genRpm=rpm*(22/12)*(22/9)*(0.95/0.3);             // crude gear ratio
+  const loaded=buckets.filter(b=>b.userData.fill>0.5).length;
+  const torque=loaded*20*9.81*CW.r;                       // N·m
+  const pMech=torque*omega;                               // W
+  const head=CW.yTop-CW.yBot+0.8;
+  const massFlow=(20/ (chainLen/NB)) * WHEEL_SPEED*speed; // kg/s (20 kg per bucket spacing)
+  const pHydro=massFlow*9.81*head;
+  const pPump=pHydro/0.5;                                 // 50 % efficient pump
+  $('stats').innerHTML=`Wheel: <b>${rpm.toFixed(1)} rpm</b> · Generator shaft: <b>${genRpm.toFixed(0)} rpm</b><br>
+  Loaded buckets: <b>${loaded}</b> (${loaded*20} kg) · Torque: <b>${torque.toFixed(0)} N·m</b><br>
+  Water flow: <b>${massFlow.toFixed(1)} kg/s</b> · Head: <b>${head.toFixed(1)} m</b><br>
+  Max mechanical power available: <b>${pMech.toFixed(0)} W</b><br>
+  Pump power to return that water (50 % eff.): <b>${pPump.toFixed(0)} W</b><br>
+  <span style="color:#ff9b9b">Net: ${(pMech*0.8-pPump).toFixed(0)} W → loop cannot self‑sustain</span>`;
+};
+let statTimer=0;
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(), .05); const adv=paused?0:dt*speed; t+=adv;
+  chainS+=WHEEL_SPEED*adv;
+  const omega=WHEEL_SPEED*adv/CW.r;
+
+  // sprockets & gear train (counter-clockwise viewed from +z as left side descends)
+  sprTop.rotation.z-=omega; sprBot.rotation.z-=omega; g1.rotation.z-=omega;
+  g2.rotation.z+=omega*(22/12); g3.rotation.z+=omega*(22/12); g4.rotation.z-=omega*(22/12)*(22/9);
+  genRotor.rotation.z-=omega*(22/12)*(22/9); pumpFan.rotation.x+=adv*12;
+  genGlow.intensity=paused?0:6+Math.sin(t*8)*2;
+  M.screen.emissiveIntensity=.6+Math.sin(t*3)*.3;
+
+  // chain links
+  links.forEach((l,i)=>{ const p=chainPos(chainS+i/NLINK*chainLen); l.position.set(p.x,p.y,0); l.rotation.y=Math.PI/2; });
+
+  // buckets: fill on the descending side, dump at the bottom
+  buckets.forEach((b,i)=>{
+    const p=chainPos(chainS+i/NB*chainLen);
+    b.position.set(p.x,p.y,0);
+    let fill=0;
+    if(p.side==='down') fill=Math.min(1,p.t*6);           // fills quickly after passing under tap
+    else if(p.side==='bottom') fill=Math.max(0,1-p.t*2.5);  // tips out
+    b.userData.fill=fill;
+    const w=b.userData.water; w.visible=fill>0.02; w.scale.set(1,Math.max(0.05,fill),1); w.position.y=-.3+fill*.15;
+    // arm points toward chain (chain is at bucket's attachment); bucket hangs outward from chain
+    const outward = (p.side==='down')?-1:(p.side==='up')?1:(p.side==='bottom'?(p.x<CW.cx?-1:1):(p.x<CW.cx?-1:1));
+    b.userData.arm.position.x = outward*-.47; // arm reaches back to chain
+    b.position.x = p.x + outward*.5;
+    if(p.side==='bottom'){ b.rotation.z = (p.x<CW.cx?1:-1)*(Math.sin(p.t*Math.PI))*1.3; } else b.rotation.z=0;
+  });
+
+  // falling stream from tap to the top-left bucket area
+  const tapX=1.5, tapY=8.1, catchY=CW.yTop-.1, tgtX=CW.cx-CW.r-.5;
+  drops.forEach(d=>{ d.userData.t+=adv*1.4; if(d.userData.t>1) d.userData.t-=1; const u=d.userData.t;
+    const x=THREE.MathUtils.lerp(tapX,tgtX,Math.min(1,u*1.3))+d.userData.jx*u, y=tapY-(tapY-catchY)*u*u;
+    d.position.set(x,y,d.userData.jz); d.scale.setScalar(.7+u*.6); });
+  // splash from dumping buckets
+  const dumpX=CW.cx-.3, dumpY=CW.yBot-.9;
+  splash.forEach(d=>{ d.userData.t+=adv*1.2; if(d.userData.t>1){ d.userData.t=0; d.userData.vx=(Math.random()-.5)*1.4; d.userData.vz=(Math.random()-.5)*1.2; } const u=d.userData.t;
+    const y=dumpY-(dumpY-LT.h*.8)*u*u; d.position.set(dumpX+d.userData.vx*u, Math.max(LT.h*.8,y), d.userData.vz*u); d.visible=!paused||true; });
+  // riser / suction / outlet flow markers
+  riserFlow.forEach((d,i)=>{ d.userData.t+=adv*.22; if(d.userData.t>1) d.userData.t-=1; const u=d.userData.t;
+    if(i%3===0) d.position.copy(suctionCurve.getPointAt(u)); else if(i%3===1) d.position.copy(riserCurve.getPointAt(u)); else d.position.copy(outletCurve.getPointAt(u)); });
+  // electrical pulses
+  pulses.forEach(p=>{ p.userData.off+=adv*.35; if(p.userData.off>1) p.userData.off-=1; p.position.copy(p.userData.curve.getPointAt(p.userData.off)); p.visible=!paused; });
+  // water surface shimmer
+  lowerWater.position.y=LT.h*.4+Math.sin(t*2)*.01;
+
+  statTimer+=dt; if(statTimer>.25){ statTimer=0; liveStats(); }
+  controls.update(); renderer.render(scene,camera); labelRenderer.render(scene,camera);
+}
+animate();
+
+addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); labelRenderer.setSize(innerWidth,innerHeight); });
+</script>
+</body>
+</html>
